@@ -35,7 +35,7 @@ public class MemTableTest {
     }
 
     @Test
-    void testMemTableFlush() throws IOException {
+    void testMemTableFlush() {
         for (int i = 0; i < 2000; i++) {
             memTable.put("key" + i, "value" + i);
         }

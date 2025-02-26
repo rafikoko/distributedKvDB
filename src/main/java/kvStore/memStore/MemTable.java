@@ -19,7 +19,6 @@ public class MemTable implements KeyValueStore {
 
     public synchronized void put(String key, String value) {
         store.put(key, value);
-        store.put(key, value);
         tombstones.remove(key); // If previously marked as deleted, remove the tombstone
 
         if (store.size() >= FLUSH_THRESHOLD) {
