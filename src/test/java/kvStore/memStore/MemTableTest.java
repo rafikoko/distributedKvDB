@@ -5,17 +5,16 @@ import kvStore.fileStore.SSTableManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 public class MemTableTest {
     private MemTable memTable;
     private SSTableManager ssTableManager;
+    private static final String TEST_DIRECTORY = "test_data/";
 
     @BeforeEach
-    void setup() throws IOException {
-        ssTableManager = new SSTableManager();
+    void setup() {
+        ssTableManager = new SSTableManager(TEST_DIRECTORY);
         memTable = new MemTable(ssTableManager);
     }
 

@@ -1,49 +1,103 @@
 package kvStore.fileStore;
 
-import java.io.IOException;
-import java.nio.file.*;
+import java.io.*;
 import java.util.*;
 
 public class SSTableManager {
-    private static final String STORAGE_DIR = "data/";
-    private final NavigableMap<String, String> index = new TreeMap<>();
+    private final String directory;
+    private final List<File> sstables = new ArrayList<>();
 
-    public SSTableManager() throws IOException {
-        Files.createDirectories(Paths.get(STORAGE_DIR));
+    // Constructor now accepts a directory path
+    public SSTableManager(String directory) {
+        this.directory = directory;
         loadExistingSSTables();
     }
 
-    private void loadExistingSSTables() throws IOException {
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(Paths.get(STORAGE_DIR), "*.sst")) {
-            for (Path path : stream) {
-                indexSSTable(path.toString());
+    // Loads existing SSTable files from the specified directory
+    private void loadExistingSSTables() {
+        File dir = new File(directory);
+        if (!dir.exists()) {
+            //TODO - handle output
+            dir.mkdirs();
+        }
+        File[] files = dir.listFiles((d, name) -> name.startsWith("sstable_") && name.endsWith(".txt"));
+        if (files != null) {
+            sstables.addAll(Arrays.asList(files));
+        }
+    }
+
+    // Writes the given key-value map to a new SSTable file
+    public synchronized void writeToSSTable(Map<String, String> data) {
+        try {
+            String filename = "sstable_" + System.currentTimeMillis() + ".txt";
+            File file = new File(directory, filename);
+            try (BufferedWriter writer = new BufferedWriter(new FileWriter(file))) {
+                for (Map.Entry<String, String> entry : data.entrySet()) {
+                    writer.write(entry.getKey() + "," + entry.getValue());
+                    writer.newLine();
+                }
             }
+            sstables.add(file);
+        } catch (IOException e) {
+            throw new RuntimeException("Error writing SSTable", e);
         }
     }
 
-    public synchronized void writeToSSTable(Map<String, String> data) throws IOException {
-        String filename = STORAGE_DIR + "sstable_" + System.currentTimeMillis() + ".sst";
-        SSTable ssTable = new SSTable(filename);
-        ssTable.write(data);
-        indexSSTable(filename);
-    }
-
-    private void indexSSTable(String filename) throws IOException {
-        SSTable ssTable = new SSTable(filename);
-        for (String key : ssTable.readAllKeys()) {
-            index.put(key, filename);
-        }
-    }
-
+    // Reads the value for a key from SSTables by scanning from newest to oldest
     public synchronized String readFromSSTables(String key) {
-        Map.Entry<String, String> entry = index.floorEntry(key);
-        if (entry != null) {
-            try {
-                return new SSTable(entry.getValue()).read(key);
+        for (int i = sstables.size() - 1; i >= 0; i--) {
+            File file = sstables.get(i);
+            try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String[] parts = line.split(",", 2);
+                    if (parts[0].equals(key)) {
+                        return parts[1];
+                    }
+                }
             } catch (IOException e) {
-                throw new RuntimeException("Failed to read from SSTable", e);
+                throw new RuntimeException("Error reading SSTable", e);
             }
         }
         return null;
+    }
+
+    /**
+     * Compacts all existing SSTables into a single SSTable.
+     * @param tombstones A set of keys that are marked as deleted.
+     */
+    public synchronized void compact(Set<String> tombstones) {
+        // 1. Merge all key-value pairs from every SSTable into one map.
+        Map<String, String> mergedData = new TreeMap<>();
+        for (File file : sstables) {
+            try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String[] parts = line.split(",", 2);
+                    if (parts.length == 2) {
+                        String key = parts[0];
+                        String value = parts[1];
+                        // Skip keys that are marked as deleted
+                        if (tombstones.contains(key)) continue;
+                        mergedData.put(key, value);
+                    }
+                }
+            } catch (IOException e) {
+                throw new RuntimeException("Error during compaction", e);
+            }
+        }
+
+        // 2. Delete all old SSTable files.
+        for (File file : sstables) {
+            //TODO - handle output
+            file.delete();
+        }
+        sstables.clear();
+
+        // 3. Write the merged data into a new SSTable.
+        writeToSSTable(mergedData);
+
+        // 4. Reload the SSTables (should now contain only the new compacted file).
+        loadExistingSSTables();
     }
 }

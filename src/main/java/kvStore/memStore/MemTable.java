@@ -2,7 +2,6 @@ package kvStore.memStore;
 
 import kvStore.fileStore.SSTableManager;
 
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
@@ -39,13 +38,11 @@ public class MemTable implements KeyValueStore {
     }
 
     private void flush() {
-        try {
+
             ssTableManager.writeToSSTable(store);
             store.clear();
             // Do NOT clear tombstones—StorageEngine needs them
-        } catch (IOException e) {
-            throw new RuntimeException("Error flushing MemTable to SSTable", e);
-        }
+
     }
 
     public boolean hasTombstone(String key) {
