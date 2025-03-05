@@ -48,4 +48,8 @@ public class MemTable implements KeyValueStore {
     public boolean hasTombstone(String key) {
         return tombstones.containsKey(key);
     }
+
+    public Map<String, Boolean> getTombstones() {
+        return tombstones;
+    }
 }

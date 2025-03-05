@@ -65,8 +65,9 @@ public class SSTableManager {
     /**
      * Compacts all existing SSTables into a single SSTable.
      * @param tombstones A set of keys that are marked as deleted.
+     * @return count of SsTables after compaction
      */
-    public synchronized void compact(Set<String> tombstones) {
+    public synchronized int compact(Set<String> tombstones) {
         // 1. Merge all key-value pairs from every SSTable into one map.
         Map<String, String> mergedData = new TreeMap<>();
         for (File file : sstables) {
@@ -99,5 +100,7 @@ public class SSTableManager {
 
         // 4. Reload the SSTables (should now contain only the new compacted file).
         loadExistingSSTables();
+
+        return sstables.size();
     }
 }
