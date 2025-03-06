@@ -4,6 +4,7 @@ import kvStore.fileStore.SSTableManager;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.TreeMap;
 
 public class MemTable implements KeyValueStore {
@@ -25,11 +26,29 @@ public class MemTable implements KeyValueStore {
         }
     }
 
+    public synchronized void batchPut(Map<String, String> entries) {
+        for (Map.Entry<String, String> entry : entries.entrySet()) {
+            put(entry.getKey(), entry.getValue());
+        }
+    }
+
     public synchronized String get(String key) {
         if (tombstones.containsKey(key)) {
             return null; // Deleted key
         }
         return store.get(key); // Only return from in-memory storage
+    }
+
+    // Returns a subMap for the given key range, filtering out tombstoned keys.
+    public synchronized NavigableMap<String, String> readRange(String startKey, String endKey) {
+        NavigableMap<String, String> subMap = store.subMap(startKey, true, endKey, true);
+        NavigableMap<String, String> result = new TreeMap<>();
+        for (Map.Entry<String, String> entry : subMap.entrySet()) {
+            if (!tombstones.containsKey(entry.getKey())) {
+                result.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return result;
     }
 
     public synchronized void delete(String key) {

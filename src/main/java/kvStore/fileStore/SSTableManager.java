@@ -62,6 +62,32 @@ public class SSTableManager {
         return null;
     }
 
+    // Reads the range of values for provided keys from SSTables by scanning from newest to oldest
+    public synchronized Map<String, String> readKeyRange(String startKey, String endKey) {
+        Map<String, String> result = new TreeMap<>();
+        // Iterate from newest to oldest: keys found earlier override older values.
+        for (int i = sstables.size() - 1; i >= 0; i--) {
+            File file = sstables.get(i);
+            try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String[] parts = line.split(",", 2);
+                    if (parts.length == 2) {
+                        String key = parts[0];
+                        String value = parts[1];
+                        if (key.compareTo(startKey) >= 0 && key.compareTo(endKey) <= 0) {
+                            // Only add if not already present (newer values override older ones).
+                            result.putIfAbsent(key, value);
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                throw new RuntimeException("Error reading SSTable for range", e);
+            }
+        }
+        return result;
+    }
+
     /**
      * Compacts all existing SSTables into a single SSTable.
      * @param tombstones A set of keys that are marked as deleted.

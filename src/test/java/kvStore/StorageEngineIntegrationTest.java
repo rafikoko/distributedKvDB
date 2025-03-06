@@ -6,7 +6,8 @@ import org.junit.jupiter.api.*;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.*;
-import java.util.Comparator;
+import java.util.*;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 public class StorageEngineIntegrationTest {
@@ -57,6 +58,50 @@ public class StorageEngineIntegrationTest {
         assertNull(storageEngine.get("key2"));
         assertEquals("value1", storageEngine.get("key1"));
         assertEquals("value3", storageEngine.get("key3"));
+    }
+
+    @Test
+    void testBatchPut() {
+        // Create a batch of key-value pairs to insert.
+        Map<String, String> batchData = new TreeMap<>();
+        batchData.put("keyA", "valueA");
+        batchData.put("keyB", "valueB");
+        batchData.put("keyC", "valueC");
+
+        // Use the new batchPut API.
+        storageEngine.batchPut(batchData);
+
+        // Verify that each key is retrievable via StorageEngine.get().
+        assertEquals("valueA", storageEngine.get("keyA"));
+        assertEquals("valueB", storageEngine.get("keyB"));
+        assertEquals("valueC", storageEngine.get("keyC"));
+    }
+
+    @Test
+    void testReadKeyRange() {
+        // Insert multiple keys using batchPut.
+        Map<String, String> batchData = new TreeMap<>();
+        batchData.put("apple", "red");
+        batchData.put("banana", "yellow");
+        batchData.put("cherry", "red");
+        batchData.put("date", "brown");
+        batchData.put("elderberry", "black");
+        storageEngine.batchPut(batchData);
+
+        // Read key range from "banana" to "date".
+        Map<String, String> rangeResult = storageEngine.readKeyRange("banana", "date");
+
+        // Expected keys: banana, cherry, date (in sorted order).
+        assertEquals(3, rangeResult.size());
+        List<String> keys = new ArrayList<>(rangeResult.keySet());
+        assertEquals("banana", keys.get(0));
+        assertEquals("cherry", keys.get(1));
+        assertEquals("date", keys.get(2));
+
+        // Verify the associated values.
+        assertEquals("yellow", rangeResult.get("banana"));
+        assertEquals("red", rangeResult.get("cherry"));
+        assertEquals("brown", rangeResult.get("date"));
     }
 
     @Test
