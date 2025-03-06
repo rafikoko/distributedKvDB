@@ -23,7 +23,23 @@ public class SSTableManager {
         }
         File[] files = dir.listFiles((d, name) -> name.startsWith("sstable_") && name.endsWith(".txt"));
         if (files != null) {
+            // Sort files by timestamp (extracted from filename) in ascending order.
+            Arrays.sort(files, Comparator.comparingLong(this::extractTimestamp));
+            // Now add them so that the list order is from oldest to newest.
             sstables.addAll(Arrays.asList(files));
+        }
+    }
+
+    // Helper method to extract timestamp from the filename
+    private long extractTimestamp(File file) {
+        // Assuming filename format: "sstable_<timestamp>.txt"
+        String name = file.getName();
+        try {
+            int start = name.indexOf('_') + 1;
+            int end = name.lastIndexOf('.');
+            return Long.parseLong(name.substring(start, end));
+        } catch (Exception e) {
+            return 0L; // fallback, though ideally this should not happen
         }
     }
 
@@ -112,7 +128,9 @@ public class SSTableManager {
     public synchronized int compact(Set<String> tombstones) {
         // 1. Merge all key-value pairs from every SSTable into one map.
         Map<String, String> mergedData = new TreeMap<>();
-        for (File file : sstables) {
+        // Iterate from newest to oldest:
+        for (int i = sstables.size() - 1; i >= 0; i--) {
+            File file = sstables.get(i);
             try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
