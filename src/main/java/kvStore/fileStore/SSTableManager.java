@@ -6,6 +6,7 @@ import java.util.*;
 public class SSTableManager {
     private final String directory;
     private final List<File> sstables = new ArrayList<>();
+    private static final String TOMBSTONE_MARKER = "__TOMBSTONE__";
 
     // Constructor now accepts a directory path
     public SSTableManager(String directory) {
@@ -26,14 +27,24 @@ public class SSTableManager {
         }
     }
 
-    // Writes the given key-value map to a new SSTable file
     public synchronized void writeToSSTable(Map<String, String> data) {
+        writeToSSTable(data, Collections.emptyMap());
+    }
+
+    // New method that accepts tombstones as well.
+    public synchronized void writeToSSTable(Map<String, String> data, Map<String, Boolean> tombstones) {
         try {
             String filename = "sstable_" + System.currentTimeMillis() + ".txt";
             File file = new File(directory, filename);
             try (BufferedWriter writer = new BufferedWriter(new FileWriter(file))) {
+                // Write live data
                 for (Map.Entry<String, String> entry : data.entrySet()) {
                     writer.write(entry.getKey() + "," + entry.getValue());
+                    writer.newLine();
+                }
+                // Write tombstone entries
+                for (String key : tombstones.keySet()) {
+                    writer.write(key + "," + TOMBSTONE_MARKER);
                     writer.newLine();
                 }
             }
@@ -51,7 +62,10 @@ public class SSTableManager {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     String[] parts = line.split(",", 2);
-                    if (parts[0].equals(key)) {
+                    if (parts.length == 2 && parts[0].equals(key)) {
+                        if (parts[1].equals(TOMBSTONE_MARKER)) {
+                            return null; // Key was deleted.
+                        }
                         return parts[1];
                     }
                 }
@@ -76,6 +90,8 @@ public class SSTableManager {
                         String key = parts[0];
                         String value = parts[1];
                         if (key.compareTo(startKey) >= 0 && key.compareTo(endKey) <= 0) {
+                            // If a tombstone is encountered, skip this key.
+                            if (value.equals(TOMBSTONE_MARKER)) continue;
                             // Only add if not already present (newer values override older ones).
                             result.putIfAbsent(key, value);
                         }
@@ -106,7 +122,15 @@ public class SSTableManager {
                         String value = parts[1];
                         // Skip keys that are marked as deleted
                         if (tombstones.contains(key)) continue;
-                        mergedData.put(key, value);
+                        // Only add if this key has not been added yet.
+                        if (!mergedData.containsKey(key)) {
+                            // If the most recent record for the key is a tombstone, we mark delete it.
+                            if (value.equals(TOMBSTONE_MARKER)) {
+                                mergedData.remove(key);
+                            } else {
+                                mergedData.put(key, value);
+                            }
+                        }
                     }
                 }
             } catch (IOException e) {

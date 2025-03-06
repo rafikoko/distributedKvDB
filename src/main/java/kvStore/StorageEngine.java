@@ -42,14 +42,16 @@ public class StorageEngine {
         Map<String, String> sstableRange = ssTableManager.readKeyRange(startKey, endKey);
 
         // Merge: MemTable data (if present) overrides SSTable values.
-        for (Map.Entry<String, String> entry : memRange.entrySet()) {
-            sstableRange.put(entry.getKey(), entry.getValue());
-        }
+        sstableRange.putAll(memRange);
         // Filter out any keys that have been deleted (tombstoned).
         for (String key : memTable.getTombstones().keySet()) {
             sstableRange.remove(key);
         }
         return new TreeMap<>(sstableRange);
+    }
+
+    public void put(String key, String value){
+        memTable.put(key, value);
     }
 
     // New method to support batch insertion.

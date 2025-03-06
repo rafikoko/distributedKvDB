@@ -6,43 +6,49 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListMap;
 
 public class MemTable implements KeyValueStore {
-    private static final int FLUSH_THRESHOLD = 1000; // Arbitrary threshold before flushing
-    private final TreeMap<String, String> store = new TreeMap<>(); //Sorted order enables efficient range queries.
-    private final Map<String, Boolean> tombstones = new HashMap<>();
+    private static final int FLUSH_THRESHOLD = 1000;
+    // Use ConcurrentSkipListMap for a thread-safe, sorted map.
+    private final ConcurrentSkipListMap<String, String> store = new ConcurrentSkipListMap<>();
+    // Use ConcurrentHashMap for tombstones.
+    private final ConcurrentHashMap<String, Boolean> tombstones = new ConcurrentHashMap<>();
     private final SSTableManager ssTableManager;
 
     public MemTable(SSTableManager ssTableManager) {
         this.ssTableManager = ssTableManager;
     }
 
-    public synchronized void put(String key, String value) {
+    public void put(String key, String value) {
         store.put(key, value);
-        tombstones.remove(key); // If previously marked as deleted, remove the tombstone
-
+        tombstones.remove(key); // Remove any previous deletion marker.
         if (store.size() >= FLUSH_THRESHOLD) {
             flush();
         }
     }
 
-    public synchronized void batchPut(Map<String, String> entries) {
+    public void batchPut(Map<String, String> entries) {
+        // For each entry, simply call put()—concurrent maps handle concurrent writes.
         for (Map.Entry<String, String> entry : entries.entrySet()) {
             put(entry.getKey(), entry.getValue());
         }
     }
 
-    public synchronized String get(String key) {
+    public String get(String key) {
+        // First, check tombstones.
         if (tombstones.containsKey(key)) {
-            return null; // Deleted key
+            return null;
         }
-        return store.get(key); // Only return from in-memory storage
+        return store.get(key);
     }
 
-    // Returns a subMap for the given key range, filtering out tombstoned keys.
-    public synchronized NavigableMap<String, String> readRange(String startKey, String endKey) {
+    public NavigableMap<String, String> readRange(String startKey, String endKey) {
+        // Get a view of the range from the concurrent sorted map.
         NavigableMap<String, String> subMap = store.subMap(startKey, true, endKey, true);
-        NavigableMap<String, String> result = new TreeMap<>();
+        // Remove keys that have been marked as deleted.
+        NavigableMap<String, String> result = new ConcurrentSkipListMap<>();
         for (Map.Entry<String, String> entry : subMap.entrySet()) {
             if (!tombstones.containsKey(entry.getKey())) {
                 result.put(entry.getKey(), entry.getValue());
@@ -51,17 +57,28 @@ public class MemTable implements KeyValueStore {
         return result;
     }
 
-    public synchronized void delete(String key) {
+    public void delete(String key) {
         store.remove(key);
-        tombstones.put(key, true); // Mark as deleted, but do NOT persist this
+        tombstones.put(key, true); // Mark key as deleted.
     }
 
+    /**
+     * Flushes the current snapshot of the store to disk.
+     * Note: This snapshot mechanism is not strictly atomic,
+     * so further refinement might be necessary in production.
+     */
     private void flush() {
+        // Create snapshots of live data and tombstones
+        NavigableMap<String, String> dataSnapshot = new TreeMap<>(store);
+        Map<String, Boolean> tombstoneSnapshot = new HashMap<>(tombstones);
 
-            ssTableManager.writeToSSTable(store);
-            store.clear();
-            // Do NOT clear tombstones—StorageEngine needs them
+        // Clear the in-memory store (live data only)
+        store.clear();
 
+        // Persist both data and tombstones
+        ssTableManager.writeToSSTable(dataSnapshot, tombstoneSnapshot);
+        // Tombstones are not cleared here so that the StorageEngine can
+        // use them to filter out deleted keys.
     }
 
     public boolean hasTombstone(String key) {
@@ -69,6 +86,6 @@ public class MemTable implements KeyValueStore {
     }
 
     public Map<String, Boolean> getTombstones() {
-        return tombstones;
+        return new ConcurrentHashMap<>(tombstones);
     }
 }
