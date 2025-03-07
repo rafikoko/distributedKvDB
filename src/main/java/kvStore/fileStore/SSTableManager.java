@@ -1,11 +1,14 @@
 package kvStore.fileStore;
 
+import kvStore.bloomFilter.BloomFilter;
+
 import java.io.*;
 import java.util.*;
 
 public class SSTableManager {
     private final String directory;
     private final List<File> sstables = new ArrayList<>();
+    private final Map<String, BloomFilter<String>> bloomFilterForFile = new HashMap<>();
     private static final String TOMBSTONE_MARKER = "__TOMBSTONE__";
 
     // Constructor now accepts a directory path
@@ -27,6 +30,28 @@ public class SSTableManager {
             Arrays.sort(files, Comparator.comparingLong(this::extractTimestamp));
             // Now add them so that the list order is from oldest to newest.
             sstables.addAll(Arrays.asList(files));
+            // For each SSTable file, attempt to load the corresponding Bloom filter metadata.
+            for (File file : sstables) {
+                BloomFilter<String> bloom = loadBloomFilterForFile(file);
+                if (bloom != null) {
+                    bloomFilterForFile.put(file.getName(), bloom);
+                }
+            }
+        }
+    }
+
+    // Helper method to load a Bloom filter from a metadata file.
+    private BloomFilter<String> loadBloomFilterForFile(File sstableFile) {
+        String metadataFilename = sstableFile.getName().replace(".txt", ".bf");
+        File metadataFile = new File(directory, metadataFilename);
+        if (!metadataFile.exists()) {
+            return null;
+        }
+        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(metadataFile))) {
+            return (BloomFilter<String>) ois.readObject();
+        } catch (IOException | ClassNotFoundException e) {
+            System.err.println("Failed to load Bloom filter for " + sstableFile.getName() + ": " + e.getMessage());
+            return null;
         }
     }
 
@@ -52,19 +77,33 @@ public class SSTableManager {
         try {
             String filename = "sstable_" + System.currentTimeMillis() + ".txt";
             File file = new File(directory, filename);
+
+            // Create a Bloom filter sized for the number of keys in data.
+            BloomFilter<String> bloomFilter = new BloomFilter<>(data.size(), 0.01); // e.g., 1% false positive rate
+            String metadataFilename = filename.replace(".txt", ".bf");
+            File metadataFile = new File(directory, metadataFilename);
             try (BufferedWriter writer = new BufferedWriter(new FileWriter(file))) {
                 // Write live data
                 for (Map.Entry<String, String> entry : data.entrySet()) {
                     writer.write(entry.getKey() + "," + entry.getValue());
                     writer.newLine();
+                    bloomFilter.add(entry.getKey());
                 }
                 // Write tombstone entries
                 for (String key : tombstones.keySet()) {
                     writer.write(key + "," + TOMBSTONE_MARKER);
                     writer.newLine();
+                    bloomFilter.add(key);
                 }
             }
+
+            // Serialize and save the Bloom filter to the metadata file.
+            try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(metadataFile))) {
+                oos.writeObject(bloomFilter);
+            }
+
             sstables.add(file);
+            bloomFilterForFile.put(file.getName(), bloomFilter);
         } catch (IOException e) {
             throw new RuntimeException("Error writing SSTable", e);
         }
@@ -74,6 +113,11 @@ public class SSTableManager {
     public synchronized String readFromSSTables(String key) {
         for (int i = sstables.size() - 1; i >= 0; i--) {
             File file = sstables.get(i);
+            BloomFilter<String> bloom = bloomFilterForFile.get(file.getName());  // Method to retrieve the Bloom filter for this file.
+            if (bloom != null && !bloom.contains(key)) {
+                // Key is definitely not in this file, skip it.
+                continue;
+            }
             try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
                 String line;
                 while ((line = reader.readLine()) != null) {

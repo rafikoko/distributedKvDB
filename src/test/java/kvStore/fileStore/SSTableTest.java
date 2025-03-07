@@ -1,5 +1,6 @@
 package kvStore.fileStore;
 
+import kvStore.bloomFilter.BloomFilter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -11,10 +12,14 @@ import static org.junit.jupiter.api.Assertions.*;
 public class SSTableTest {
     private static final String TEST_FILE = "test_sstable.txt";
     private SSTable ssTable;
+    int numElements = 3;
+    double falsePositiveRate = 0.01; // 1% desired false positive probability
+    // Create and populate the Bloom filter.
+    BloomFilter<String> bloomFilter = new BloomFilter<>(numElements, falsePositiveRate);
 
     @BeforeEach
     void setUp() {
-        ssTable = new SSTable(TEST_FILE);
+        ssTable = new SSTable(TEST_FILE, bloomFilter);
     }
 
     @AfterEach

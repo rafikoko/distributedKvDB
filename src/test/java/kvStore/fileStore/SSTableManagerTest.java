@@ -84,4 +84,46 @@ public class SSTableManagerTest {
         assertEquals("value1", ssTableManager.readFromSSTables("key1"));
         assertEquals("value3", ssTableManager.readFromSSTables("key3"));
     }
+
+    @Test
+    void testBloomFilterPersistence() {
+        // Write data to an SSTable.
+        Map<String, String> data = new HashMap<>();
+        data.put("key1", "value1");
+        data.put("key2", "value2");
+        ssTableManager.writeToSSTable(data);
+
+        // Simulate a system restart by creating a new SSTableManager using the same directory.
+        SSTableManager reloadedManager = new SSTableManager(tempDir.toString());
+
+        // Verify that the Bloom filter is loaded and used correctly.
+        assertEquals("value1", reloadedManager.readFromSSTables("key1"));
+        assertEquals("value2", reloadedManager.readFromSSTables("key2"));
+        // Check that a non-existent key returns null.
+        assertNull(reloadedManager.readFromSSTables("key3"));
+    }
+
+    @Test
+    void testReadKeyRange() {
+        // Prepare a sorted data set.
+        Map<String, String> data = new TreeMap<>();
+        data.put("a", "alpha");
+        data.put("b", "bravo");
+        data.put("c", "charlie");
+        data.put("d", "delta");
+        data.put("e", "echo");
+
+        // Write the data to an SSTable.
+        ssTableManager.writeToSSTable(data);
+
+        // Read a range from "b" to "d" (inclusive).
+        Map<String, String> rangeResult = ssTableManager.readKeyRange("b", "d");
+
+        // Verify that the range contains the expected keys and values.
+        assertEquals(3, rangeResult.size());
+        assertEquals("bravo", rangeResult.get("b"));
+        assertEquals("charlie", rangeResult.get("c"));
+        assertEquals("delta", rangeResult.get("d"));
+    }
+
 }
