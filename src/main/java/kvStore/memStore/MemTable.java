@@ -1,6 +1,7 @@
 package kvStore.memStore;
 
 import kvStore.fileStore.SSTableManager;
+import kvStore.log.WriteAheadLog;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -16,12 +17,16 @@ public class MemTable implements KeyValueStore {
     // Use ConcurrentHashMap for tombstones.
     private final ConcurrentHashMap<String, Boolean> tombstones = new ConcurrentHashMap<>();
     private final SSTableManager ssTableManager;
+    private final WriteAheadLog wal;  // WAL instance
 
-    public MemTable(SSTableManager ssTableManager) {
+    public MemTable(SSTableManager ssTableManager, WriteAheadLog wal) {
         this.ssTableManager = ssTableManager;
+        this.wal = wal;
     }
 
     public void put(String key, String value) {
+        // First, write to the WAL for durability.
+        wal.appendPut(key, value);
         store.put(key, value);
         tombstones.remove(key); // Remove any previous deletion marker.
         if (store.size() >= FLUSH_THRESHOLD) {
@@ -58,6 +63,7 @@ public class MemTable implements KeyValueStore {
     }
 
     public void delete(String key) {
+        wal.appendDelete(key);
         store.remove(key);
         tombstones.put(key, true); // Mark key as deleted.
     }
@@ -67,7 +73,7 @@ public class MemTable implements KeyValueStore {
      * Note: This snapshot mechanism is not strictly atomic,
      * so further refinement might be necessary in production.
      */
-    private void flush() {
+    private synchronized void flush() {
         // Create snapshots of live data and tombstones
         NavigableMap<String, String> dataSnapshot = new TreeMap<>(store);
         Map<String, Boolean> tombstoneSnapshot = new HashMap<>(tombstones);
@@ -79,6 +85,9 @@ public class MemTable implements KeyValueStore {
         ssTableManager.writeToSSTable(dataSnapshot, tombstoneSnapshot);
         // Tombstones are not cleared here so that the StorageEngine can
         // use them to filter out deleted keys.
+
+        // After flush, rotate the WAL so that old entries are not replayed.
+        wal.rotate();
     }
 
     public boolean hasTombstone(String key) {
@@ -87,5 +96,20 @@ public class MemTable implements KeyValueStore {
 
     public Map<String, Boolean> getTombstones() {
         return new ConcurrentHashMap<>(tombstones);
+    }
+
+    /**
+     * Replays the WAL to restore unflushed operations.
+     */
+    public synchronized void recoverFromWAL() {
+        for (WriteAheadLog.LogEntry entry : wal.recover()) {
+            if (entry.op == WriteAheadLog.LogEntry.Operation.PUT) {
+                store.put(entry.key, entry.value);
+                tombstones.remove(entry.key);
+            } else if (entry.op == WriteAheadLog.LogEntry.Operation.DELETE) {
+                store.remove(entry.key);
+                tombstones.put(entry.key, true);
+            }
+        }
     }
 }

@@ -1,6 +1,7 @@
 package kvStore;
 
 import kvStore.fileStore.SSTableManager;
+import kvStore.log.WriteAheadLog;
 import kvStore.memStore.MemTable;
 
 import java.io.File;
@@ -17,7 +18,8 @@ public class StorageEnginePerformanceTest {
 
         // Initialize components.
         SSTableManager ssTableManager = new SSTableManager(tempDir.toString());
-        MemTable memTable = new MemTable(ssTableManager);
+        WriteAheadLog writeAheadLog = new WriteAheadLog(tempDir.toString());
+        MemTable memTable = new MemTable(ssTableManager,writeAheadLog);
         StorageEngine storageEngine = new StorageEngine(memTable, ssTableManager);
 
         int numOperations = 100_000; // Number of operations to perform.

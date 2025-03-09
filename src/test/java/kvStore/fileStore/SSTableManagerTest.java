@@ -52,12 +52,14 @@ public class SSTableManagerTest {
     }
 
     @Test
-    void testCompaction() {
+    void testCompaction() throws InterruptedException {
         // Write data into two separate SSTables.
         Map<String, String> data1 = new HashMap<>();
         data1.put("key1", "value1");
         data1.put("key2", "value2");
         ssTableManager.writeToSSTable(data1);
+
+        Thread.sleep(5);
 
         Map<String, String> data2 = new HashMap<>();
         // Simulate an update to key2 and a new key3.

@@ -1,6 +1,8 @@
-package kvStore;
+package kvStore.integrationTest;
 
+import kvStore.StorageEngine;
 import kvStore.fileStore.SSTableManager;
+import kvStore.log.WriteAheadLog;
 import kvStore.memStore.MemTable;
 import org.junit.jupiter.api.*;
 import java.io.File;
@@ -20,7 +22,8 @@ public class StorageEngineIntegrationTest {
         // Create a temporary directory for SSTable files
         tempDir = Files.createTempDirectory("storage_engine_test");
         SSTableManager ssTableManager = new SSTableManager(tempDir.toString());
-        memTable = new MemTable(ssTableManager);
+        WriteAheadLog wal = new WriteAheadLog(tempDir.toString());
+        memTable = new MemTable(ssTableManager, wal);
         storageEngine = new StorageEngine(memTable, ssTableManager);
     }
 

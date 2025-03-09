@@ -2,6 +2,7 @@ package kvStore.memStore;
 
 import kvStore.StorageEngine;
 import kvStore.fileStore.SSTableManager;
+import kvStore.log.WriteAheadLog;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -15,7 +16,8 @@ public class MemTableTest {
     @BeforeEach
     void setup() {
         ssTableManager = new SSTableManager(TEST_DIRECTORY);
-        memTable = new MemTable(ssTableManager);
+        WriteAheadLog writeAheadLog = new WriteAheadLog(TEST_DIRECTORY);
+        memTable = new MemTable(ssTableManager,writeAheadLog);
     }
 
     @Test

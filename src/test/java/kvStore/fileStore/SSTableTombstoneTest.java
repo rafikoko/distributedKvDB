@@ -1,6 +1,7 @@
 package kvStore.fileStore;
 
 import kvStore.StorageEngine;
+import kvStore.log.WriteAheadLog;
 import kvStore.memStore.MemTable;
 import org.junit.jupiter.api.*;
 import java.io.File;
@@ -19,7 +20,8 @@ public class SSTableTombstoneTest {
         // Create a temporary directory for SSTable files.
         tempDir = Files.createTempDirectory("tombstone_test");
         SSTableManager ssTableManager = new SSTableManager(tempDir.toString());
-        memTable = new MemTable(ssTableManager);
+        WriteAheadLog writeAheadLog = new WriteAheadLog(tempDir.toString());
+        memTable = new MemTable(ssTableManager,writeAheadLog);
         storageEngine = new StorageEngine(memTable, ssTableManager);
     }
 
