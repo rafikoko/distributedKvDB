@@ -8,7 +8,7 @@ import java.util.List;
 public class WriteAheadLog implements Serializable {
     @Serial
     private static final long serialVersionUID = 1L;
-    private File logFile;  // Made package-private for testing
+    private File logFile;
     private BufferedWriter writer;
     private final String directory;
 
@@ -17,10 +17,13 @@ public class WriteAheadLog implements Serializable {
     }
 
     public WriteAheadLog(String directory) {
+        this(directory, false);
+    }
+    public WriteAheadLog(String directory, boolean forceNewFile) {
         this.directory = directory;
         // Try to find the most recent WAL file.
         File latestWal = getLatestWalFile();
-        if (latestWal != null) {
+        if (latestWal != null && !forceNewFile) {
             // Use the existing WAL file for recovery.
             this.logFile = latestWal;
         } else {
@@ -88,9 +91,21 @@ public class WriteAheadLog implements Serializable {
     }
 
     public synchronized List<LogEntry> recover() {
+        if (!logFile.exists()) return List.of();
+        List<LogEntry> entries = readWalFile(logFile);
+        return entries;
+    }
+
+    public synchronized List<LogEntry> recoverFile(String fileName){
+        File file = new File(directory, fileName);
+        if (!file.exists()) return List.of();
+        List<LogEntry> entries = readWalFile(file);
+        return entries;
+    }
+
+    private List<LogEntry> readWalFile(File file) {
         List<LogEntry> entries = new ArrayList<>();
-        if (!logFile.exists()) return entries;
-        try (BufferedReader reader = new BufferedReader(new FileReader(logFile))) {
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 // Split on commas not preceded by a backslash.

@@ -78,4 +78,38 @@ public class WriteAheadLogTest {
         assertEquals("keyB", entries.getFirst().key);
         assertEquals("valueB", entries.getFirst().value);
     }
+
+    @Test
+    void testRecoverOldFile() throws InterruptedException {
+        // Append an operation.
+        wal.appendPut("keyA", "valueA");
+        wal.appendPut("keyB", "valueB");
+        String oldFileName = wal.getLogFile().getName();
+
+        // Rotate the WAL.
+        Thread.sleep(5);
+        wal.rotate();
+        String newFileName = wal.getLogFile().getName();
+        assertNotEquals(oldFileName, newFileName, "WAL file name should change after rotation");
+
+        // The new WAL should be empty.
+        List<WriteAheadLog.LogEntry> entries = wal.recover();
+        assertTrue(entries.isEmpty(), "New WAL should be empty after rotation");
+
+        WriteAheadLog oldWal = new WriteAheadLog(tempDir.toString());
+        List<WriteAheadLog.LogEntry> oldLogEntries = oldWal.recoverFile(oldFileName);
+        assertEquals(2, oldLogEntries.size());
+
+        WriteAheadLog.LogEntry e1 = oldLogEntries.get(0);
+        WriteAheadLog.LogEntry e2 = oldLogEntries.get(1);
+
+        assertEquals(WriteAheadLog.LogEntry.Operation.PUT, e1.op);
+        assertEquals("keyA", e1.key);
+        assertEquals("valueA", e1.value);
+
+        assertEquals(WriteAheadLog.LogEntry.Operation.PUT, e2.op);
+        assertEquals("keyB", e2.key);
+        assertEquals("valueB", e2.value);
+
+    }
 }
