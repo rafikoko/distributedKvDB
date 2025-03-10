@@ -85,11 +85,12 @@ public class MemTableTest {
     }
 
     @Test
-    void testNewPutsAfterFlushAreLogged() {
+    void testNewPutsAfterFlushAreLogged() throws InterruptedException {
         // Trigger a flush to rotate WAL.
         memTable.put("key1", "value1");
         memTable.flush();
 
+        Thread.sleep(5);
         // Now add a new operation.
         memTable.put("key2", "value2");
 
