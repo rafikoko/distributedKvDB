@@ -73,7 +73,9 @@ public class MemTable implements KeyValueStore {
      * Note: This snapshot mechanism is not strictly atomic,
      * so further refinement might be necessary in production.
      */
-    private synchronized void flush() {
+    synchronized void flush() {
+        System.out.println("Flushing mem table into file - contains " + store.size() + " data points and " + tombstones.size() + " tombstones");
+
         // Create snapshots of live data and tombstones
         NavigableMap<String, String> dataSnapshot = new TreeMap<>(store);
         Map<String, Boolean> tombstoneSnapshot = new HashMap<>(tombstones);

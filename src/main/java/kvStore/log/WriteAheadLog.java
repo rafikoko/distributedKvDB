@@ -2,10 +2,13 @@ package kvStore.log;
 
 import java.io.*;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
-public class WriteAheadLog {
-    private File logFile;
+public class WriteAheadLog implements Serializable {
+    @Serial
+    private static final long serialVersionUID = 1L;
+    private File logFile;  // Made package-private for testing
     private BufferedWriter writer;
     private final String directory;
 
@@ -15,12 +18,43 @@ public class WriteAheadLog {
 
     public WriteAheadLog(String directory) {
         this.directory = directory;
-        this.logFile = new File(directory, "wal_" + System.currentTimeMillis() + ".log");
+        // Try to find the most recent WAL file.
+        File latestWal = getLatestWalFile();
+        if (latestWal != null) {
+            // Use the existing WAL file for recovery.
+            this.logFile = latestWal;
+        } else {
+            // No existing WAL found; create a new one.
+            this.logFile = new File(directory, "wal_" + System.currentTimeMillis() + ".log");
+        }
         try {
-            // Open the log file in append mode.
+            // Open the file in append mode.
             writer = new BufferedWriter(new FileWriter(logFile, true));
         } catch (IOException e) {
             throw new RuntimeException("Error initializing WAL", e);
+        }
+    }
+
+    // Scans the directory for existing WAL files and returns the one with the highest timestamp.
+    private File getLatestWalFile() {
+        File dir = new File(directory);
+        File[] files = dir.listFiles((d, name) -> name.startsWith("wal_") && name.endsWith(".log"));
+        if (files != null && files.length > 0) {
+            // Sort files by timestamp in descending order.
+            Arrays.sort(files, (f1, f2) -> Long.compare(extractTimestamp(f2.getName()), extractTimestamp(f1.getName())));
+            return files[0]; // The most recent WAL file.
+        }
+        return null;
+    }
+
+    // Helper method to extract timestamp from a WAL filename.
+    private long extractTimestamp(String filename) {
+        try {
+            int start = filename.indexOf('_') + 1;
+            int end = filename.lastIndexOf('.');
+            return Long.parseLong(filename.substring(start, end));
+        } catch (Exception e) {
+            return 0L;
         }
     }
 
@@ -45,7 +79,6 @@ public class WriteAheadLog {
         }
     }
 
-    // Simple escaping to handle commas.
     private String escape(String s) {
         return s.replace(",", "\\,");
     }
@@ -54,19 +87,7 @@ public class WriteAheadLog {
         return s.replace("\\,", ",");
     }
 
-    public synchronized void close() {
-        try {
-            writer.close();
-        } catch (IOException e) {
-            // Handle error if needed.
-        }
-    }
-
-    /**
-     * Replays the WAL by reading all log entries.
-     * Returns a list of log entries in the order they were written.
-     */
-    public List<LogEntry> recover() {
+    public synchronized List<LogEntry> recover() {
         List<LogEntry> entries = new ArrayList<>();
         if (!logFile.exists()) return entries;
         try (BufferedReader reader = new BufferedReader(new FileReader(logFile))) {
@@ -91,14 +112,22 @@ public class WriteAheadLog {
         return entries;
     }
 
+    public synchronized void close() {
+        try {
+            writer.close();
+        } catch (IOException e) {
+            // Optionally log error.
+        }
+    }
+
     /**
      * Rotates the WAL: closes the current log file and starts a new one.
      */
     public synchronized void rotate() {
         // Close the current writer.
         close();
-        // Optionally, archive or remove the old WAL file if no longer needed.
-        // For simplicity, we simply create a new WAL.
+        // Optionally archive or delete the old WAL file here.
+        // Create a new WAL file.
         this.logFile = new File(directory, "wal_" + System.currentTimeMillis() + ".log");
         try {
             writer = new BufferedWriter(new FileWriter(logFile, true));
@@ -117,6 +146,15 @@ public class WriteAheadLog {
             this.op = op;
             this.key = key;
             this.value = value;
+        }
+
+        @Override
+        public String toString() {
+            return "LogEntry{" +
+                    "op=" + op +
+                    ", key='" + key + '\'' +
+                    ", value='" + value + '\'' +
+                    '}';
         }
     }
 }
